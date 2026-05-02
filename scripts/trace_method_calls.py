@@ -523,6 +523,86 @@ def print_graph(graph, classes, methods):
         print("")
 
 
+def dot_escape(value):
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def dot_node_id(class_name, method_name):
+    return "%s.%s" % (class_name, method_name)
+
+
+def print_dot_graph(graph, classes, methods):
+    nodes = {}
+    edges = set()
+
+    def add_node(node_id, label, style=None):
+        attrs = {'label': label}
+        if style:
+            attrs['style'] = style
+        nodes[node_id] = attrs
+
+    def call_node(call):
+        target = call["target_type"] or "unresolved"
+        node_id = "call:%s:%s:%s" % (target, call["receiver"], call["method"])
+        label = "%s.%s()" % (target, call["method"])
+        if target == "unresolved":
+            label = "%s.%s()" % (call["receiver"], call["method"])
+        return node_id, label
+
+    for (class_name, method_name), data in graph.items():
+        caller = dot_node_id(class_name, method_name)
+        add_node(caller, "%s.%s()" % (class_name, method_name), "dashed" if data["missing"] else None)
+
+        if data["missing"]:
+            continue
+
+        for call in data["calls"]:
+            added_resolved_edge = False
+            for resolved_class in call["resolved_classes"]:
+                if call["method"] != "<init>" and call["method"] not in methods.get(resolved_class, {}):
+                    continue
+                callee = dot_node_id(resolved_class, call["method"])
+                add_node(callee, "%s.%s()" % (resolved_class, call["method"]))
+                edges.add(
+                    (
+                        caller,
+                        callee,
+                        "line %s: %s.%s()" % (call["line"], call["receiver"], call["method"]),
+                    )
+                )
+                added_resolved_edge = True
+
+            if not added_resolved_edge:
+                callee, label = call_node(call)
+                add_node(callee, label, "dashed")
+                edges.add(
+                    (
+                        caller,
+                        callee,
+                        "line %s: %s.%s()" % (call["line"], call["receiver"], call["method"]),
+                    )
+                )
+
+    print("digraph method_calls {")
+    print('  graph [rankdir="LR"];')
+    print('  node [shape="box"];')
+
+    for node_id, attrs_by_name in sorted(nodes.items()):
+        attrs = [
+            '%s="%s"' % (name, dot_escape(value))
+            for name, value in sorted(attrs_by_name.items())
+        ]
+        print('  "%s" [%s];' % (dot_escape(node_id), ", ".join(attrs)))
+
+    for caller, callee, label in sorted(edges):
+        print(
+            '  "%s" -> "%s" [label="%s"];'
+            % (dot_escape(caller), dot_escape(callee), dot_escape(label))
+        )
+
+    print("}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("class_name", help="Simple or fully-qualified class name, e.g. QuoteDataBean")
@@ -535,6 +615,7 @@ def main():
         help="Use the fast parser matcher or Semgrep for receiver-qualified calls",
     )
     parser.add_argument("--semgrep-timeout", type=int, default=10, help="Seconds to wait for each Semgrep scan")
+    parser.add_argument("--dot", action="store_true", help="Output findings as Graphviz DOT")
     args = parser.parse_args()
 
     classes, methods, implementors = build_index()
@@ -554,7 +635,10 @@ def main():
         args.engine,
         args.semgrep_timeout,
     )
-    print_graph(graph, classes, methods)
+    if args.dot:
+        print_dot_graph(graph, classes, methods)
+    else:
+        print_graph(graph, classes, methods)
 
 
 if __name__ == "__main__":
