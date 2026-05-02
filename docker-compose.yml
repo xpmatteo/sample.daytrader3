@@ -1,0 +1,13 @@
+services:
+  daytrader:
+    build:
+      context: .
+    image: sample-daytrader3:runtime
+    ports:
+      - "9083:9083"
+      - "9443:9443"
+    volumes:
+      - daytrader-data:/opt/ibm/wlp/usr/shared/resources/data
+
+volumes:
+  daytrader-data:

@@ -18,6 +18,34 @@ Browse the code to see what it does, or build and run it yourself:
 
 Once the server has been started, go to [http://localhost:9083/daytrader](http://localhost:9083/daytrader) to interact with the sample.
 
+## Running with Docker Compose
+
+Build the EAR and Derby runtime dependency on the host first:
+
+```bash
+gradle build
+```
+
+or:
+
+```bash
+mvn install
+```
+
+This must create `daytrader3-ee6-wlpcfg/servers/daytrader3_Sample/apps/daytrader3-ee6.ear` and `daytrader3-ee6-wlpcfg/shared/resources/Daytrader3_SampleDerbyLibs/derby-10.10.1.1.jar`.
+
+Then package and start the Liberty runtime container:
+
+```bash
+docker compose up --build
+```
+
+Open [http://localhost:9083/daytrader](http://localhost:9083/daytrader). On first run, use the Configuration page to recreate and repopulate the database, then restart the container:
+
+```bash
+docker compose restart daytrader
+```
+
 ## Notice
 
 © Copyright IBM Corporation 2015.
