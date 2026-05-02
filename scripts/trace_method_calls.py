@@ -531,7 +531,7 @@ def dot_node_id(class_name, method_name):
     return "%s.%s" % (class_name, method_name)
 
 
-def print_dot_graph(graph, classes, methods):
+def print_dot_graph(graph, classes, methods, group_by_class=False):
     nodes = {}
     edges = set()
 
@@ -540,6 +540,65 @@ def print_dot_graph(graph, classes, methods):
         if style:
             attrs['style'] = style
         nodes[node_id] = attrs
+
+    def print_dot(nodes, edges):
+        print("digraph method_calls {")
+        print('  graph [rankdir="LR"];')
+        print('  node [shape="box"];')
+
+        for node_id, attrs_by_name in sorted(nodes.items()):
+            attrs = [
+                '%s="%s"' % (name, dot_escape(value))
+                for name, value in sorted(attrs_by_name.items())
+            ]
+            print('  "%s" [%s];' % (dot_escape(node_id), ", ".join(attrs)))
+
+        for caller, callee, label in sorted(edges):
+            if label:
+                print(
+                    '  "%s" -> "%s" [label="%s"];'
+                    % (dot_escape(caller), dot_escape(callee), dot_escape(label))
+                )
+            else:
+                print('  "%s" -> "%s";' % (dot_escape(caller), dot_escape(callee)))
+
+        print("}")
+
+    def class_node(target):
+        if target and target != "unresolved":
+            return "class:%s" % target, target, "dashed" if target not in classes else None
+        return "class:unresolved", "unresolved", "dashed"
+
+    if group_by_class:
+        edge_counts = defaultdict(int)
+
+        for (class_name, _), data in graph.items():
+            caller, label, style = class_node(class_name)
+            add_node(caller, label, "dashed" if data["missing"] else style)
+
+            if data["missing"]:
+                continue
+
+            for call in data["calls"]:
+                targets = []
+                for resolved_class in call["resolved_classes"]:
+                    if call["method"] != "<init>" and call["method"] not in methods.get(resolved_class, {}):
+                        continue
+                    targets.append(resolved_class)
+                if not targets:
+                    targets.append(call["target_type"] or "unresolved")
+
+                for target in targets:
+                    callee, label, style = class_node(target)
+                    add_node(callee, label, style)
+                    edge_counts[(caller, callee)] += 1
+
+        for (caller, callee), count in edge_counts.items():
+            label = "1 call" if count == 1 else "%s calls" % count
+            edges.add((caller, callee, label))
+
+        print_dot(nodes, edges)
+        return
 
     def call_node(call):
         target = call["target_type"] or "unresolved"
@@ -563,11 +622,12 @@ def print_dot_graph(graph, classes, methods):
                     continue
                 callee = dot_node_id(resolved_class, call["method"])
                 add_node(callee, "%s.%s()" % (resolved_class, call["method"]))
+                label = "line %s: %s.%s()" % (call["line"], call["receiver"], call["method"])
                 edges.add(
                     (
                         caller,
                         callee,
-                        "line %s: %s.%s()" % (call["line"], call["receiver"], call["method"]),
+                        label,
                     )
                 )
                 added_resolved_edge = True
@@ -583,24 +643,7 @@ def print_dot_graph(graph, classes, methods):
                     )
                 )
 
-    print("digraph method_calls {")
-    print('  graph [rankdir="LR"];')
-    print('  node [shape="box"];')
-
-    for node_id, attrs_by_name in sorted(nodes.items()):
-        attrs = [
-            '%s="%s"' % (name, dot_escape(value))
-            for name, value in sorted(attrs_by_name.items())
-        ]
-        print('  "%s" [%s];' % (dot_escape(node_id), ", ".join(attrs)))
-
-    for caller, callee, label in sorted(edges):
-        print(
-            '  "%s" -> "%s" [label="%s"];'
-            % (dot_escape(caller), dot_escape(callee), dot_escape(label))
-        )
-
-    print("}")
+    print_dot(nodes, edges)
 
 
 def main():
@@ -616,6 +659,7 @@ def main():
     )
     parser.add_argument("--semgrep-timeout", type=int, default=10, help="Seconds to wait for each Semgrep scan")
     parser.add_argument("--dot", action="store_true", help="Output findings as Graphviz DOT")
+    parser.add_argument("--classes", action="store_true", help="With --dot, output one node per class")
     args = parser.parse_args()
 
     classes, methods, implementors = build_index()
@@ -636,7 +680,7 @@ def main():
         args.semgrep_timeout,
     )
     if args.dot:
-        print_dot_graph(graph, classes, methods)
+        print_dot_graph(graph, classes, methods, args.classes)
     else:
         print_graph(graph, classes, methods)
 
