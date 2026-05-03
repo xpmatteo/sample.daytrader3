@@ -159,6 +159,12 @@ DayTrader is a full legacy trading application that doubles as a controlled meas
 - Calls out anti-patterns to remove or contain in production: unauthenticated reset, mutable static config, descriptor drift, checked-in runtime output, weak MVC boundaries where no benchmark rationale exists.
 - Reconnects each subsystem to the core thesis and gives a forward-looking view of how to modernize the trading app without destroying its measurement value.
 
+### Chapter 19: Bugs, Smells, and Needed Improvements
+
+- Classifies known defects, likely behavioral bugs, code smells, security/operations risks, and benchmark-quality smells.
+- Turns findings into a modernization backlog ordered by correctness, comparability, build stability, runtime clarity, and security.
+- Shows how to prompt AI tools for evidence-based bug and smell analysis rather than broad cleanup.
+
 ## Proposed Chapter Dependencies
 
 - Chapters 1-3 define the system, service surface, and data model.
@@ -166,7 +172,7 @@ DayTrader is a full legacy trading application that doubles as a controlled meas
 - Chapters 7-9 explain implementation variants and enterprise side effects.
 - Chapters 10-13 explain user and workload surfaces built on the core.
 - Chapters 14-16 explain runtime infrastructure once the reader understands what it supports.
-- Chapters 17-18 synthesize performance method and transferable modernization architecture.
+- Chapters 17-19 synthesize performance method, transferable modernization architecture, and the defect/improvement backlog.
 
 ## Approved Output Format
 
