@@ -531,14 +531,21 @@ def dot_node_id(class_name, method_name):
     return "%s.%s" % (class_name, method_name)
 
 
+def is_ejb_local_interface(class_name, classes):
+    info = classes.get(class_name)
+    return bool(info and "@Local" in info["text"])
+
+
 def print_dot_graph(graph, classes, methods, group_by_class=False):
     nodes = {}
     edges = set()
 
-    def add_node(node_id, label, style=None):
+    def add_node(node_id, label, style=None, shape=None):
         attrs = {'label': label}
         if style:
             attrs['style'] = style
+        if shape:
+            attrs['shape'] = shape
         nodes[node_id] = attrs
 
     def print_dot(nodes, edges):
@@ -566,15 +573,17 @@ def print_dot_graph(graph, classes, methods, group_by_class=False):
 
     def class_node(target):
         if target and target != "unresolved":
-            return "class:%s" % target, target, "dashed" if target not in classes else None
-        return "class:unresolved", "unresolved", "dashed"
+            style = "dashed" if target not in classes else None
+            shape = "component" if is_ejb_local_interface(target, classes) else None
+            return "class:%s" % target, target, style, shape
+        return "class:unresolved", "unresolved", "dashed", None
 
     if group_by_class:
         edge_counts = defaultdict(int)
 
         for (class_name, _), data in graph.items():
-            caller, label, style = class_node(class_name)
-            add_node(caller, label, "dashed" if data["missing"] else style)
+            caller, label, style, shape = class_node(class_name)
+            add_node(caller, label, "dashed" if data["missing"] else style, shape)
 
             if data["missing"]:
                 continue
@@ -588,10 +597,18 @@ def print_dot_graph(graph, classes, methods, group_by_class=False):
                 if not targets:
                     targets.append(call["target_type"] or "unresolved")
 
+                if is_ejb_local_interface(call["target_type"], classes) and targets:
+                    interface_node, label, style, shape = class_node(call["target_type"])
+                    add_node(interface_node, label, style, shape)
+                    edge_counts[(caller, interface_node)] += 1
+                    source = interface_node
+                else:
+                    source = caller
+
                 for target in targets:
-                    callee, label, style = class_node(target)
-                    add_node(callee, label, style)
-                    edge_counts[(caller, callee)] += 1
+                    callee, label, style, shape = class_node(target)
+                    add_node(callee, label, style, shape)
+                    edge_counts[(source, callee)] += 1
 
         for (caller, callee), count in edge_counts.items():
             label = "1 call" if count == 1 else "%s calls" % count
@@ -610,24 +627,49 @@ def print_dot_graph(graph, classes, methods, group_by_class=False):
 
     for (class_name, method_name), data in graph.items():
         caller = dot_node_id(class_name, method_name)
-        add_node(caller, "%s.%s()" % (class_name, method_name), "dashed" if data["missing"] else None)
+        add_node(
+            caller,
+            "%s.%s()" % (class_name, method_name),
+            "dashed" if data["missing"] else None,
+            "component" if is_ejb_local_interface(class_name, classes) else None,
+        )
 
         if data["missing"]:
             continue
 
         for call in data["calls"]:
             added_resolved_edge = False
+            if is_ejb_local_interface(call["target_type"], classes) and call["resolved_classes"]:
+                interface_node = dot_node_id(call["target_type"], call["method"])
+                add_node(interface_node, "%s.%s()" % (call["target_type"], call["method"]), None, "component")
+                edges.add(
+                    (
+                        caller,
+                        interface_node,
+                        "line %s: %s.%s()" % (call["line"], call["receiver"], call["method"]),
+                    )
+                )
+                edge_source = interface_node
+                edge_label = "EJB implementation"
+            else:
+                edge_source = caller
+                edge_label = "line %s: %s.%s()" % (call["line"], call["receiver"], call["method"])
+
             for resolved_class in call["resolved_classes"]:
                 if call["method"] != "<init>" and call["method"] not in methods.get(resolved_class, {}):
                     continue
                 callee = dot_node_id(resolved_class, call["method"])
-                add_node(callee, "%s.%s()" % (resolved_class, call["method"]))
-                label = "line %s: %s.%s()" % (call["line"], call["receiver"], call["method"])
+                add_node(
+                    callee,
+                    "%s.%s()" % (resolved_class, call["method"]),
+                    None,
+                    "component" if is_ejb_local_interface(resolved_class, classes) else None,
+                )
                 edges.add(
                     (
-                        caller,
+                        edge_source,
                         callee,
-                        label,
+                        edge_label,
                     )
                 )
                 added_resolved_edge = True
